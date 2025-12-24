@@ -18,7 +18,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("📊 HR Analytics: Performance & Appraisal System")
-st.markdown("Fitur: **Slicer Lengkap**, **Logika Libur Otomatis**, **Top Ranking**, dan **Appraisal Calculator**.")
 st.markdown("---")
 
 # --- 2. DATA LIBUR NASIONAL & KANTOR (2025) ---
@@ -61,7 +60,6 @@ kantor_list = [
 # --- 3. FUNGSI SMART LOAD ---
 @st.cache_data
 def load_data_smart(file):
-    # Coba baca 10 baris pertama untuk mencari header
     try:
         df_scan = pd.read_excel(file, header=None, nrows=10)
     except:
@@ -79,7 +77,6 @@ def load_data_smart(file):
             break
             
     file.seek(0)
-    # Jika tidak ketemu header spesifik, default ke 0
     if not found:
         header_idx = 0
         
@@ -124,7 +121,6 @@ if uploaded_file:
             with st.spinner("Mengkalkulasi Data, Cross Join & Slicer..."):
                 
                 # 1. Cleaning Basic
-                # Pastikan kolom ada sebelum dipanggil
                 df_act = df_raw[[c_nama, c_masuk, c_keluar, c_lokasi, c_catatan]].copy()
                 df_act.columns = ['Nama', 'Masuk_Raw', 'Keluar_Raw', 'Lokasi', 'Catatan']
 
@@ -286,7 +282,7 @@ if 'df_full' in st.session_state:
             # --- B. CHARTS ROW 1 ---
             c1, c2 = st.columns(2)
             with c1:
-                st.subheader("1. Komposisi Kehadiran")
+                st.subheader("Pie Chart Kehadiran")
                 color_map = {
                     "Alpha": "#FF5252", "WFH": "#2196F3", "WFO": "#4CAF50", 
                     "Cuti": "#FFC107", "Libur Nasional": "#9E9E9E",
@@ -300,7 +296,7 @@ if 'df_full' in st.session_state:
                 st.plotly_chart(fig_pie, use_container_width=True)
 
             with c2:
-                st.subheader("2. Monitoring Kepatuhan Bulanan")
+                st.subheader("Monitoring Kepatuhan Bulanan")
                 df_monthly = df_filtered[df_filtered['Durasi']>0].groupby('Bulan_Angka')['Durasi'].mean().reset_index()
                 # Jika df_monthly kosong, skip
                 if not df_monthly.empty:
@@ -314,7 +310,7 @@ if 'df_full' in st.session_state:
             # --- C. CHARTS ROW 2 ---
             c3, c4 = st.columns(2)
             with c3:
-                st.subheader("3. Monitoring Jam Kerja Harian")
+                st.subheader("Monitoring Jam Kerja Harian")
                 df_hadir = df_filtered[df_filtered['Durasi'] > 0].sort_values('Tanggal')
                 if not df_hadir.empty:
                     fig_line = px.line(df_hadir, x='Tanggal', y='Durasi', color='Nama', markers=True)
@@ -324,7 +320,7 @@ if 'df_full' in st.session_state:
                     st.info("Belum ada data kehadiran harian.")
             
             with c4:
-                st.subheader("4. Top Ranking")
+                st.subheader("Top Ranking")
                 tab_rank1, tab_rank2 = st.tabs(["Rajin (Hadir)", "Bolos (Absen)"])
                 
                 with tab_rank1:
@@ -347,7 +343,7 @@ if 'df_full' in st.session_state:
 
             # --- D. TABEL DETAIL (EXPANDER) ---
             st.markdown("---")
-            with st.expander("📂 Buka/Tutup Detail Data Karyawan", expanded=False):
+            with st.expander("📂 Detail Data Karyawan", expanded=False):
                 def highlight_under(row):
                     if row['Durasi'] > 0 and row['Durasi'] < 8.5: return ['background-color: #ffcdd2'] * len(row)
                     if row['Status'] == 'Alpha': return ['background-color: #ffebee'] * len(row)
@@ -406,7 +402,7 @@ if 'df_full' in st.session_state:
                 c1.metric("Skor Absensi (Bobot 10%)", f"{score_absensi:.1f}", f"Alpha: {alpha_count}")
                 c2.metric("Skor WFO (Bobot 20%)", f"{score_wfo:.1f}", f"WFO: {wfo_count} dari target {target_wfo_dinamis}")
                 
-                st.markdown("#### Input Penilaian Manual (Atasan)")
+                st.markdown("#### Input Penilaian Manual")
                 col_m1, col_m2 = st.columns(2)
                 with col_m1:
                     v_kom = st.slider("1. Komunikasi (10%)", 0, 100, 80)
