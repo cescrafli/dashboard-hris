@@ -54,7 +54,8 @@ kantor_list = [
     "PT GANITRI NITSAYA HARITA", "PT VALUTAC INOVASI KREASI",
     "PRIME GLOBAL (KAP KANEL & REKAN)", "SANJAYA SOLUSINDO (PT SANJAYA SOLUSI DIGITAL INDONESIA)",
     "PT. SARAHMA GLOBAL INFORMATIKA", "TRIPROCKETS TRAVEL INDONESIA", "THE MAP CONSULTANT",
-    "KESSLER EXECUTIVE SEARCH", "APP INTERNATIONAL INDONESIA"
+    "KESSLER EXECUTIVE SEARCH", "APP INTERNATIONAL INDONESIA", "PT WIAGA INTECH NUSANTARA",
+    "PARAMADAKSA TEKNOLOGI NUSANTARA NEXSOFT"
 ]
 
 # --- 3. FUNGSI SMART LOAD ---
@@ -321,7 +322,7 @@ if 'df_full' in st.session_state:
             
             with c4:
                 st.subheader("Top Ranking")
-                tab_rank1, tab_rank2 = st.tabs(["Rajin (Hadir)", "Bolos (Absen)"])
+                tab_rank1, tab_rank2 = st.tabs(["Kehadiran", "Ketidakhadiran"])
                 
                 with tab_rank1:
                     df_present = df_filtered[df_filtered['Status'].str.contains('WF|Lembur', na=False)].groupby('Nama').size().reset_index(name='Jumlah Hadir')
@@ -343,16 +344,58 @@ if 'df_full' in st.session_state:
 
             # --- D. TABEL DETAIL (EXPANDER) ---
             st.markdown("---")
-            with st.expander("📂 Detail Data Karyawan", expanded=False):
-                def highlight_under(row):
-                    if row['Durasi'] > 0 and row['Durasi'] < 8.5: return ['background-color: #ffcdd2'] * len(row)
-                    if row['Status'] == 'Alpha': return ['background-color: #ffebee'] * len(row)
-                    return [''] * len(row)
+            with st.expander("📂 Detail Data Karyawany", expanded=False):
                 
+                # 1. Siapkan DataFrame khusus untuk tampilan
+                cols_view = ['Tanggal', 'Nama', 'Status', 'Durasi', 'Performa', 'Masuk_Raw', 'Keluar_Raw']
+                df_detail = df_filtered[cols_view].copy()
+                
+                # Pastikan kolom Tanggal jadi string agar bisa diisi teks "TOTAL"
+                df_detail['Tanggal'] = df_detail['Tanggal'].astype(str)
+
+                # 2. Hitung Total
+                total_durasi = df_detail['Durasi'].sum()
+                total_hadir = len(df_detail[df_detail['Status'].str.contains('WFO|WFH|Lembur', na=False)])
+                
+                # 3. Buat Baris Total
+                row_total = pd.DataFrame({
+                    'Tanggal': ['TOTAL KESELURUHAN'],
+                    'Nama': ['-'], 
+                    'Status': [f"Hadir: {total_hadir} Hari"], 
+                    'Durasi': [total_durasi], 
+                    'Performa': ['-'],
+                    'Masuk_Raw': ['-'],
+                    'Keluar_Raw': ['-']
+                })
+
+                # 4. Gabungkan (Concat) data asli dengan baris Total
+                df_final_view = pd.concat([df_detail, row_total], ignore_index=True)
+
+                # 5. Styling (Update fungsi highlight)
+                def highlight_style(row):
+                    # Style khusus untuk Baris TOTAL
+                    if row['Tanggal'] == 'TOTAL KESELURUHAN':
+                        return ['font-weight: bold; background-color: #cfd8dc; color: black'] * len(row)
+                    
+                    # Style existing (Underperformance & Alpha)
+                    styles = [''] * len(row)
+                    if row['Durasi'] > 0 and row['Durasi'] < 8.5:
+                        styles = ['background-color: #ffcdd2'] * len(row)
+                    elif row['Status'] == 'Alpha':
+                        styles = ['background-color: #ffebee'] * len(row)
+                    
+                    return styles
+                
+                # 6. Tampilkan
                 try:
-                    st.dataframe(df_filtered[['Tanggal', 'Nama', 'Status', 'Durasi', 'Performa', 'Masuk_Raw', 'Keluar_Raw']].style.apply(highlight_under, axis=1), use_container_width=True)
-                except:
-                    st.dataframe(df_filtered[['Tanggal', 'Nama', 'Status', 'Durasi', 'Performa']], use_container_width=True)
+                    st.dataframe(
+                        df_final_view.style.apply(highlight_style, axis=1)
+                        .format({'Durasi': '{:.2f}'}), # Format 2 desimal
+                        use_container_width=True
+                    )
+                except Exception as e:
+                    st.error(f"Gagal menampilkan tabel: {e}")
+                    st.dataframe(df_final_view)
 
     # === TAB 2: APPRAISAL CALCULATOR ===
     with tab2:
