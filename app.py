@@ -14,6 +14,7 @@ st.markdown("""
 <style>
     .metric-card {background-color: #f0f2f6; padding: 20px; border-radius: 10px; border-left: 5px solid #4CAF50;}
     .stDataFrame {font-size: 12px;}
+    div[data-testid="stMetricValue"] {font-size: 18px;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -71,7 +72,6 @@ def load_data_smart(file):
     found = False
     for i, row in df_scan.iterrows():
         txt = " ".join(row.astype(str).str.upper().tolist())
-        # Logika deteksi header: harus ada kata NAMA dan (MASUK atau ABSEN)
         if "NAMA" in txt and ("MASUK" in txt or "ABSEN" in txt):
             header_idx = i
             found = True
@@ -87,6 +87,38 @@ def load_data_smart(file):
         file.seek(0)
         df = pd.read_csv(file, header=header_idx, encoding='utf-8', sep=None, engine='python')
     return df
+
+# --- HELPER: SYNC SLIDER & INPUT ---
+def make_synced_input(label, key_prefix, default_val=80):
+    key_val = f"{key_prefix}_val"
+    if key_val not in st.session_state:
+        st.session_state[key_val] = default_val
+
+    def update_from_slider():
+        st.session_state[key_val] = st.session_state[f"{key_prefix}_slider"]
+
+    def update_from_number():
+        st.session_state[key_val] = st.session_state[f"{key_prefix}_number"]
+
+    c1, c2 = st.columns([3, 1])
+    with c1:
+        st.slider(
+            label=f"{label} (Geser)",
+            min_value=0, max_value=100,
+            value=st.session_state[key_val],
+            key=f"{key_prefix}_slider",
+            on_change=update_from_slider
+        )
+    with c2:
+        st.number_input(
+            label="Ketik Nilai",
+            min_value=0, max_value=100,
+            value=st.session_state[key_val],
+            key=f"{key_prefix}_number",
+            on_change=update_from_number
+        )
+    
+    return st.session_state[key_val]
 
 # --- 4. SIDEBAR CONTROLS ---
 st.sidebar.header("1. Data Source")
@@ -174,7 +206,6 @@ if uploaded_file:
 
                     # C. HARI BIASA
                     keywords_kerja = ['WFH', 'WFO', 'MASUK', 'WORK', '-', 'NAN', 'HADIR', '']
-                    # Logika: Jika catatan BUKAN salah satu keyword di atas, anggap Cuti/Izin/Sakit
                     is_catatan_kerja = any(k == cat or k in cat for k in keywords_kerja)
                     
                     if cat != "" and not is_catatan_kerja:
@@ -220,26 +251,25 @@ if 'df_full' in st.session_state:
     st.sidebar.header("4. Filter Data (Slicer)")
     
     # 1. Tahun
-    sel_tahun = st.sidebar.multiselect("Pilih Tahun", sorted(df['Tahun'].unique()), default=sorted(df['Tahun'].unique()))
+    sel_tahun = st.sidebar.multiselect("Tahun", sorted(df['Tahun'].unique()), default=sorted(df['Tahun'].unique()))
     
     # 2. Bulan
     df_bulan_unik = df[['Bulan', 'Bulan_Angka']].drop_duplicates().sort_values('Bulan_Angka')
-    sel_bulan = st.sidebar.multiselect("Pilih Bulan", df_bulan_unik['Bulan'].tolist(), default=df_bulan_unik['Bulan'].tolist())
+    sel_bulan = st.sidebar.multiselect("Bulan", df_bulan_unik['Bulan'].tolist(), default=df_bulan_unik['Bulan'].tolist())
     
     # 3. Minggu (Slider Range)
-    # Handle jika data kosong atau hanya 1 minggu
     if not df.empty:
         min_week = int(df['Minggu_Ke'].min())
         max_week = int(df['Minggu_Ke'].max())
         if min_week == max_week:
             sel_minggu = (min_week, max_week)
         else:
-            sel_minggu = st.sidebar.slider("Pilih Range Minggu Ke-", min_value=min_week, max_value=max_week, value=(min_week, max_week))
+            sel_minggu = st.sidebar.slider("Range Minggu Ke-", min_value=min_week, max_value=max_week, value=(min_week, max_week))
     else:
         sel_minggu = (0,0)
         
     # 4. Karyawan
-    sel_karyawan = st.sidebar.multiselect("Pilih Karyawan", sorted(df['Nama'].unique()), default=sorted(df['Nama'].unique()))
+    sel_karyawan = st.sidebar.multiselect("List Karyawan", sorted(df['Nama'].unique()), default=sorted(df['Nama'].unique()))
 
     # --- FILTERING ---
     if not sel_tahun: sel_tahun = df['Tahun'].unique()
@@ -261,11 +291,8 @@ if 'df_full' in st.session_state:
         if df_filtered.empty:
             st.warning("Data kosong dengan filter ini.")
         else:
-            # --- A. KPI CARDS UTAMA ---
             total_karyawan = df_filtered['Nama'].nunique()
-            # Rata-rata jam kerja global (hanya menghitung yg masuk)
             avg_jam_global = df_filtered[df_filtered['Durasi']>0]['Durasi'].mean()
-            # Handle NaN jika tidak ada data durasi
             if pd.isna(avg_jam_global): avg_jam_global = 0
             
             total_under = len(df_filtered[df_filtered['Performa'] == 'Under'])
@@ -280,7 +307,6 @@ if 'df_full' in st.session_state:
 
             st.markdown("---")
 
-            # --- B. CHARTS ROW 1 ---
             c1, c2 = st.columns(2)
             with c1:
                 st.subheader("Pie Chart Kehadiran")
@@ -299,7 +325,6 @@ if 'df_full' in st.session_state:
             with c2:
                 st.subheader("Monitoring Kepatuhan Bulanan")
                 df_monthly = df_filtered[df_filtered['Durasi']>0].groupby('Bulan_Angka')['Durasi'].mean().reset_index()
-                # Jika df_monthly kosong, skip
                 if not df_monthly.empty:
                     df_monthly['Bulan'] = df_monthly['Bulan_Angka'].apply(lambda x: calendar.month_name[x])
                     fig_monthly = px.line(df_monthly, x='Bulan', y='Durasi', markers=True, title="Trend Rata-rata Jam Kerja per Bulan")
@@ -308,7 +333,6 @@ if 'df_full' in st.session_state:
                 else:
                     st.info("Belum ada data durasi untuk grafik bulanan.")
 
-            # --- C. CHARTS ROW 2 ---
             c3, c4 = st.columns(2)
             with c3:
                 st.subheader("Monitoring Jam Kerja Harian")
@@ -323,7 +347,6 @@ if 'df_full' in st.session_state:
             with c4:
                 st.subheader("Top Ranking")
                 tab_rank1, tab_rank2 = st.tabs(["Kehadiran", "Ketidakhadiran"])
-                
                 with tab_rank1:
                     df_present = df_filtered[df_filtered['Status'].str.contains('WF|Lembur', na=False)].groupby('Nama').size().reset_index(name='Jumlah Hadir')
                     df_present = df_present.sort_values('Jumlah Hadir', ascending=False).head(3)
@@ -332,7 +355,6 @@ if 'df_full' in st.session_state:
                         st.plotly_chart(fig_top3_hadir, use_container_width=True)
                     else:
                         st.write("-")
-                    
                 with tab_rank2:
                     df_absent = df_filtered[df_filtered['Status'].isin(['Alpha', 'Cuti'])].groupby('Nama').size().reset_index(name='Jumlah Absen')
                     df_absent = df_absent.sort_values('Jumlah Absen', ascending=False).head(3)
@@ -342,22 +364,15 @@ if 'df_full' in st.session_state:
                     else:
                         st.success("Tidak ada ketidakhadiran (Alpha/Cuti).")
 
-            # --- D. TABEL DETAIL (EXPANDER) ---
             st.markdown("---")
-            with st.expander("📂 Detail Data Karyawany", expanded=False):
-                
-                # 1. Siapkan DataFrame khusus untuk tampilan
+            with st.expander("📂 Detail Data Karyawan", expanded=False):
                 cols_view = ['Tanggal', 'Nama', 'Status', 'Durasi', 'Performa', 'Masuk_Raw', 'Keluar_Raw']
                 df_detail = df_filtered[cols_view].copy()
-                
-                # Pastikan kolom Tanggal jadi string agar bisa diisi teks "TOTAL"
                 df_detail['Tanggal'] = df_detail['Tanggal'].astype(str)
 
-                # 2. Hitung Total
                 total_durasi = df_detail['Durasi'].sum()
                 total_hadir = len(df_detail[df_detail['Status'].str.contains('WFO|WFH|Lembur', na=False)])
                 
-                # 3. Buat Baris Total
                 row_total = pd.DataFrame({
                     'Tanggal': ['TOTAL KESELURUHAN'],
                     'Nama': ['-'], 
@@ -368,97 +383,141 @@ if 'df_full' in st.session_state:
                     'Keluar_Raw': ['-']
                 })
 
-                # 4. Gabungkan (Concat) data asli dengan baris Total
                 df_final_view = pd.concat([df_detail, row_total], ignore_index=True)
 
-                # 5. Styling (Update fungsi highlight)
                 def highlight_style(row):
-                    # Style khusus untuk Baris TOTAL
                     if row['Tanggal'] == 'TOTAL KESELURUHAN':
                         return ['font-weight: bold; background-color: #cfd8dc; color: black'] * len(row)
-                    
-                    # Style existing (Underperformance & Alpha)
                     styles = [''] * len(row)
                     if row['Durasi'] > 0 and row['Durasi'] < 8.5:
                         styles = ['background-color: #ffcdd2'] * len(row)
                     elif row['Status'] == 'Alpha':
                         styles = ['background-color: #ffebee'] * len(row)
-                    
                     return styles
                 
-                # 6. Tampilkan
                 try:
-                    st.dataframe(
-                        df_final_view.style.apply(highlight_style, axis=1)
-                        .format({'Durasi': '{:.2f}'}), # Format 2 desimal
-                        use_container_width=True
-                    )
-                except Exception as e:
-                    st.error(f"Gagal menampilkan tabel: {e}")
+                    st.dataframe(df_final_view.style.apply(highlight_style, axis=1).format({'Durasi': '{:.2f}'}), use_container_width=True)
+                except:
                     st.dataframe(df_final_view)
 
-    # === TAB 2: APPRAISAL CALCULATOR ===
+    # === TAB 2: UPDATE APPRAISAL CALCULATOR (LOGIC PERBAIKAN DI SINI) ===
     with tab2:
-        st.header("🧮 Simulasi Penilaian (Per Karyawan)")
-        st.info("Pilih karyawan untuk menghitung skor appraisal berdasarkan rumus bobot.")
+        st.header("🧮 Penilaian Kinerja Appraisal")
+        st.info("Pilih karyawan untuk menghitung skor appraisal secara otomatis dan manual.")
         
-        # Dropdown Karyawan
         list_karyawan_app = sorted(df['Nama'].unique())
-        # Proteksi jika list kosong
-        if not list_karyawan_app:
-            st.warning("Data karyawan tidak ditemukan.")
-            target_emp = None
-        else:
-            target_emp = st.selectbox("Pilih Karyawan:", list_karyawan_app)
+        
+        col_sel_emp, col_dummy = st.columns([1, 2])
+        with col_sel_emp:
+            target_emp = st.selectbox("Pilih Karyawan:", list_karyawan_app) if list_karyawan_app else None
         
         if target_emp:
-            # Ambil data Full sesuai filter Slicer (Periode penilaian = Periode slicer)
-            df_emp = df_filtered[df_filtered['Nama'] == target_emp]
+            # Filter Data Khusus Karyawan Terpilih
+            df_emp = df_filtered[df_filtered['Nama'] == target_emp].copy()
             
             if df_emp.empty:
                 st.warning("Tidak ada data untuk karyawan ini di periode yang dipilih.")
             else:
+                st.markdown("### A. Penilaian by System (Bobot 65%)")
+                
+                # --- 1. KPI ACHIEVEMENT (20%) ---
+                total_hari_hadir = len(df_emp[df_emp['Durasi'] > 0])
+                score_kpi_raw = (total_hari_hadir / 20) * 100
+                score_kpi = 100 if score_kpi_raw > 100 else score_kpi_raw
+                
+                # --- 2. PROJECT DEVELOPMENT (15%) [LOGIC BARU] ---
+                # Logic: Hitung nilai harian. Jika absen di hari kerja = 0.
+                list_skor_project = []
+                
+                for idx, row in df_emp.iterrows():
+                    durasi = row['Durasi']
+                    status = row['Status']
+                    
+                    # Cek apakah hari ini "Countable" (Wajib dinilai)
+                    # Hari yang TIDAK dinilai: Libur/Weekend TAPI tidak masuk (Durasi 0)
+                    is_holiday_weekend = any(x in status for x in ["Libur", "Akhir Pekan"])
+                    
+                    if is_holiday_weekend and durasi == 0:
+                        continue # Skip, jangan masukkan ke rata-rata (Exempt)
+                    
+                    # Hitung skor harian
+                    if durasi >= 8.5:
+                        skor_harian = 100
+                    else:
+                        skor_harian = (durasi / 8.5) * 100
+                    
+                    # Note: Jika Alpha (Status bukan Libur tapi Durasi 0), skor_harian otomatis 0
+                    list_skor_project.append(skor_harian)
+                
+                if len(list_skor_project) > 0:
+                    score_project = sum(list_skor_project) / len(list_skor_project)
+                else:
+                    score_project = 0
+                    
+                # Pembulatan agar rapi
+                score_project = round(score_project, 2)
+
+                # --- 3. KELENGKAPAN ABSENSI (10%) ---
                 total_days = len(df_emp)
-                # Hari libur tidak mengurangi kuota kerja wajib
                 libur_count = len(df_emp[df_emp['Status'].isin(['Libur Nasional', 'Libur Akhir Pekan'])])
-                
                 wajib_kerja = total_days - libur_count
-                if wajib_kerja <= 0: wajib_kerja = 1
+                if wajib_kerja < 1: wajib_kerja = 1
                 
-                # Hitung Alpha
                 alpha_count = len(df_emp[df_emp['Status'] == 'Alpha'])
-                
-                # 1. Skor Absensi (10%)
                 score_absensi = ((wajib_kerja - alpha_count) / wajib_kerja) * 100
                 if score_absensi < 0: score_absensi = 0
-                
-                # 2. Skor WFO (20%) - Target dinamis 80% dari hari kerja
-                wfo_count = len(df_emp[df_emp['Status'].str.contains('WFO', na=False)])
-                target_wfo_dinamis = int(wajib_kerja * 0.8) 
-                if target_wfo_dinamis < 1: target_wfo_dinamis = 1
-                
-                score_wfo = (wfo_count / target_wfo_dinamis) * 100
-                if score_wfo > 100: score_wfo = 100
 
-                # TAMPILAN OTOMATIS
-                c1, c2 = st.columns(2)
-                c1.metric("Skor Absensi (Bobot 10%)", f"{score_absensi:.1f}", f"Alpha: {alpha_count}")
-                c2.metric("Skor WFO (Bobot 20%)", f"{score_wfo:.1f}", f"WFO: {wfo_count} dari target {target_wfo_dinamis}")
+                # --- 4. WFO Presence (20%) ---
+                jumlah_minggu = df_emp['Minggu_Ke'].nunique()
+                if jumlah_minggu < 1: jumlah_minggu = 1
                 
-                st.markdown("#### Input Penilaian Manual")
-                col_m1, col_m2 = st.columns(2)
-                with col_m1:
-                    v_kom = st.slider("1. Komunikasi (10%)", 0, 100, 80)
-                    v_kpi = st.slider("2. KPI Achievement (20%)", 0, 120, 100)
-                    v_skill = st.slider("4. Problem Solving (10%)", 0, 100, 75)
-                with col_m2:
-                    v_kual = st.slider("6. Kualitas Kerja (15%)", 0, 100, 80)
-                    v_proj = st.slider("7. Project (15%)", 0, 100, 70)
-                    
-                # Rumus Final
-                final_score = (score_absensi*0.1) + (score_wfo*0.2) + (v_kom*0.1) + (min(v_kpi,100)*0.2) + (v_skill*0.1) + (v_kual*0.15) + (v_proj*0.15)
+                target_wfo_total = jumlah_minggu * 4
+                actual_wfo = len(df_emp[df_emp['Status'].str.contains('WFO', na=False)])
                 
-                # Grade
+                score_wfo_raw = (actual_wfo / target_wfo_total) * 100
+                score_wfo = 100 if score_wfo_raw > 100 else score_wfo_raw
+
+                # TAMPILAN SYSTEM SCORE
+                c_sys1, c_sys2, c_sys3, c_sys4 = st.columns(4)
+                c_sys1.metric("2. KPI (20%)", f"{score_kpi:.1f}", f"{total_hari_hadir}/20 Hari")
+                # Update tampilan metrik Project
+                c_sys2.metric("7. Project (15%)", f"{score_project:.1f}", "Rata-rata Skor")
+                c_sys3.metric("3. Absensi (10%)", f"{score_absensi:.1f}", f"Alpha: {alpha_count}")
+                c_sys4.metric("5. WFO (20%)", f"{score_wfo:.1f}", f"{actual_wfo}/{target_wfo_total} Hari")
+
+                st.markdown("---")
+                st.markdown("### B. Penilaian Manual (Bobot 35%)")
+                st.caption("Geser slider atau ketik angka (0-100). Keduanya sinkron.")
+
+                # INPUT MANUAL DENGAN FUNGSI SYNC
+                # 1. Komunikasi (10%)
+                st.markdown("**1. Komunikasi (10%)**")
+                val_komunikasi = make_synced_input("Skor Komunikasi", "komunikasi", 80)
+                
+                st.markdown("<br>", unsafe_allow_html=True)
+                
+                # 4. Problem Solving (10%)
+                st.markdown("**4. Keahlian / Problem Solving (10%)**")
+                val_problem_solving = make_synced_input("Skor Problem Solving", "problem", 75)
+
+                st.markdown("<br>", unsafe_allow_html=True)
+
+                # 6. Kualitas Kerja (15%)
+                st.markdown("**6. Kualitas Kerja (15%)** - Inisiatif, laporan, diskusi, responsive")
+                val_kualitas = make_synced_input("Skor Kualitas", "kualitas", 80)
+
+                # --- FINAL CALCULATION ---
+                final_score = (
+                    (val_komunikasi * 0.10) +       # Manual 1
+                    (score_kpi * 0.20) +            # System 2
+                    (score_absensi * 0.10) +        # System 3
+                    (val_problem_solving * 0.10) +  # Manual 4
+                    (score_wfo * 0.20) +            # System 5
+                    (val_kualitas * 0.15) +         # Manual 6
+                    (score_project * 0.15)          # System 7
+                )
+
+                # Grade Logic
                 if final_score >= 90: grade = "A (Outstanding)"
                 elif final_score >= 80: grade = "B (Exceeds)"
                 elif final_score >= 70: grade = "C (Meets)"
@@ -466,16 +525,18 @@ if 'df_full' in st.session_state:
                 else: grade = "E (Unsatisfactory)"
 
                 st.markdown("---")
-                st.subheader(f"🏆 HASIL APPRAISAL: {final_score:.2f}")
-                st.caption(f"Grade: {grade}")
-                
-                # Radar Chart
+                st.subheader(f"🏆 TOTAL SCORE: {final_score:.2f}")
+                st.info(f"Grade: **{grade}**")
+
+                # RADAR CHART
                 df_radar = pd.DataFrame({
-                    'Kategori': ['Absensi', 'WFO', 'Komunikasi', 'KPI', 'Skill', 'Kualitas', 'Project'],
-                    'Nilai': [score_absensi, score_wfo, v_kom, min(v_kpi,100), v_skill, v_kual, v_proj]
+                    'Kategori': ['Komunikasi (10%)', 'KPI (20%)', 'Absensi (10%)', 'Prob. Solving (10%)', 'WFO (20%)', 'Kualitas (15%)', 'Project (15%)'],
+                    'Nilai': [val_komunikasi, score_kpi, score_absensi, val_problem_solving, score_wfo, val_kualitas, score_project]
                 })
+                
                 fig_radar = px.line_polar(df_radar, r='Nilai', theta='Kategori', line_close=True)
-                fig_radar.update_traces(fill='toself')
+                fig_radar.update_traces(fill='toself', line_color='#4CAF50')
+                fig_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 100])))
                 st.plotly_chart(fig_radar, use_container_width=True)
 
 else:
