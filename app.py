@@ -248,7 +248,7 @@ if 'df_full' in st.session_state:
     
     # --- SLICER (SIDEBAR) ---
     st.sidebar.markdown("---")
-    st.sidebar.header("4. Filter Data (Slicer)")
+    st.sidebar.header("4. Filter Data")
     
     # 1. Tahun
     sel_tahun = st.sidebar.multiselect("Tahun", sorted(df['Tahun'].unique()), default=sorted(df['Tahun'].unique()))
