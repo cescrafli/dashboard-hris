@@ -122,28 +122,22 @@ def make_synced_input(label, key_prefix, default_val=80):
 
 # --- 4. SIDEBAR CONTROLS ---
 st.sidebar.header("1. Data Source")
-# UPDATE: Tambahkan accept_multiple_files=True
 uploaded_files = st.sidebar.file_uploader("Upload Report (Bisa Pilih Banyak File)", type=["xlsx", "csv"], accept_multiple_files=True)
 
 if uploaded_files:
     # A. LOAD & MAPPING (MULTI-FILE LOGIC)
     all_dfs = []
     
-    # Loop setiap file yang diupload
     for file in uploaded_files:
         try:
             df_temp = load_data_smart(file)
-            # Opsional: Bersihkan nama kolom agar konsisten saat digabung
             df_temp.columns = [str(c).strip() for c in df_temp.columns]
             all_dfs.append(df_temp)
         except Exception as e:
             st.sidebar.error(f"Gagal load file: {file.name}. Error: {e}")
 
     if all_dfs:
-        # Gabungkan semua file menjadi satu DataFrame besar
         df_raw = pd.concat(all_dfs, ignore_index=True)
-        
-        # --- PROSES SEPERTI BIASA SETELAH DIGABUNG ---
         df_raw.columns = [str(c).strip() for c in df_raw.columns]
         cols = df_raw.columns.tolist()
 
@@ -153,7 +147,6 @@ if uploaded_files:
                 if any(x in c.upper() for x in k): return i
             return 0
 
-        # Selectbox mengambil kolom dari data gabungan
         c_nama = st.sidebar.selectbox("Nama", cols, index=find(['NAMA','NAME']))
         c_masuk = st.sidebar.selectbox("Absen Masuk", cols, index=find(['MASUK','IN']))
         c_keluar = st.sidebar.selectbox("Absen Keluar", cols, index=find(['KELUAR','OUT']))
@@ -185,11 +178,24 @@ if uploaded_files:
                 df_act['Tanggal'] = df_act['Masuk_Obj'].dt.date
                 df_act['Absen Masuk'] = df_act['Masuk_Obj']
                 df_act['Absen Keluar'] = pd.to_datetime(df_act['Keluar_Raw'], errors='coerce')
+
+                # ============================================================
+                # UPDATE: AUTO CHECKOUT 20:00 JIKA KOSONG
+                # ============================================================
+                def set_auto_checkout(row):
+                    # Jika Masuk ada, tapi Keluar NaT (Kosong)
+                    if pd.notnull(row['Absen Masuk']) and pd.isnull(row['Absen Keluar']):
+                        # Set keluar jam 20:00:00 pada hari yang sama dengan Masuk
+                        return row['Absen Masuk'].replace(hour=20, minute=0, second=0)
+                    return row['Absen Keluar']
+
+                df_act['Absen Keluar'] = df_act.apply(set_auto_checkout, axis=1)
+                # ============================================================
+
                 df_act['Lokasi'] = df_act['Lokasi'].fillna("").astype(str).str.upper()
                 df_act['Catatan'] = df_act['Catatan'].fillna("").astype(str).str.upper()
 
                 # 3. Cross Join (Master Data)
-                # Mencari range tanggal min/max dari KESELURUHAN file
                 unique_names = df_act['Nama'].unique()
                 min_date = df_act['Tanggal'].min()
                 max_date = df_act['Tanggal'].max()
@@ -198,7 +204,6 @@ if uploaded_files:
                 grid = list(itertools.product(unique_names, all_dates.date))
                 df_master = pd.DataFrame(grid, columns=['Nama', 'Tanggal'])
                 
-                # Hapus duplikat jika ada file yang overlapping (tanggal sama diupload 2x)
                 df_act = df_act.drop_duplicates(subset=['Nama', 'Tanggal'], keep='last')
                 
                 df_final = pd.merge(df_master, df_act, on=['Nama', 'Tanggal'], how='left')
@@ -210,7 +215,7 @@ if uploaded_files:
                     lok = str(row['Lokasi']).strip().upper() if pd.notnull(row['Lokasi']) else ""
                     ada_absen = pd.notnull(row['Absen Masuk'])
                     
-                    is_weekend = tgl.weekday() >= 5 # 5=Sabtu, 6=Minggu
+                    is_weekend = tgl.weekday() >= 5 
 
                     # A. CEK HARI LIBUR NASIONAL
                     if tgl in libur_nasional:
@@ -258,7 +263,7 @@ if uploaded_files:
                 df_final['Minggu_Ke'] = df_final['Tanggal_DT'].dt.isocalendar().week
 
                 st.session_state['df_full'] = df_final
-                st.success(f"Berhasil menggabungkan {len(uploaded_files)} file!")
+                st.success(f"Berhasil menggabungkan {len(uploaded_files)} file !")
 
     else:
         st.sidebar.warning("File kosong atau format tidak didukung.")
@@ -278,7 +283,7 @@ if 'df_full' in st.session_state:
     df_bulan_unik = df[['Bulan', 'Bulan_Angka']].drop_duplicates().sort_values('Bulan_Angka')
     sel_bulan = st.sidebar.multiselect("Bulan", df_bulan_unik['Bulan'].tolist(), default=df_bulan_unik['Bulan'].tolist())
     
-    # 3. Minggu (Slider Range)
+    # 3. Minggu
     if not df.empty:
         min_week = int(df['Minggu_Ke'].min())
         max_week = int(df['Minggu_Ke'].max())
@@ -367,23 +372,54 @@ if 'df_full' in st.session_state:
             
             with c4:
                 st.subheader("Top Ranking")
-                tab_rank1, tab_rank2 = st.tabs(["Kehadiran", "Ketidakhadiran"])
+                # UPDATE: Menambahkan tab ke-3 "Jam Kerja Terbanyak"
+                tab_rank1, tab_rank2, tab_rank3 = st.tabs(["Kehadiran Tertinggi", "Ketidakhadiran Tertinggi", "Kerajinan Tertinggi"])
+                
+                # --- TAB 1: JUMLAH KEHADIRAN ---
                 with tab_rank1:
+                    # Sort Descending (Terbanyak ke Sedikit)
                     df_present = df_filtered[df_filtered['Status'].str.contains('WF|Lembur', na=False)].groupby('Nama').size().reset_index(name='Jumlah Hadir')
                     df_present = df_present.sort_values('Jumlah Hadir', ascending=False).head(3)
+                    
                     if not df_present.empty:
-                        fig_top3_hadir = px.bar(df_present, x='Jumlah Hadir', y='Nama', orientation='h', color_discrete_sequence=['#4CAF50'])
+                        fig_top3_hadir = px.bar(df_present, x='Jumlah Hadir', y='Nama', orientation='h', text_auto=True, color_discrete_sequence=['#4CAF50'])
+                        fig_top3_hadir.update_layout(yaxis={'categoryorder':'total ascending'}) 
                         st.plotly_chart(fig_top3_hadir, use_container_width=True)
                     else:
                         st.write("-")
+                
+                # --- TAB 2: JUMLAH ABSEN (ALPHA/CUTI) ---
                 with tab_rank2:
+                    # Sort Descending (Terbanyak ke Sedikit)
                     df_absent = df_filtered[df_filtered['Status'].isin(['Alpha', 'Cuti'])].groupby('Nama').size().reset_index(name='Jumlah Absen')
                     df_absent = df_absent.sort_values('Jumlah Absen', ascending=False).head(3)
+                    
                     if not df_absent.empty:
-                        fig_top3_absen = px.bar(df_absent, x='Jumlah Absen', y='Nama', orientation='h', color_discrete_sequence=['#FF5252'])
+                        fig_top3_absen = px.bar(df_absent, x='Jumlah Absen', y='Nama', orientation='h', text_auto=True, color_discrete_sequence=['#FF5252'])
+                        fig_top3_absen.update_layout(yaxis={'categoryorder':'total ascending'})
                         st.plotly_chart(fig_top3_absen, use_container_width=True)
                     else:
                         st.success("Tidak ada ketidakhadiran (Alpha/Cuti).")
+
+                # --- TAB 3: TOTAL JAM KERJA (BARU) ---
+                with tab_rank3:
+                    # Hitung total durasi per nama
+                    df_hours = df_filtered.groupby('Nama')['Durasi'].sum().reset_index()
+                    df_hours = df_hours.sort_values('Durasi', ascending=False).head(3)
+
+                    if not df_hours.empty:
+                        # Menggunakan warna Biru (#2196F3) untuk membedakan
+                        fig_top3_hours = px.bar(df_hours, x='Durasi', y='Nama', orientation='h', 
+                                                text_auto='.1f',  # Menampilkan angka desimal 1 digit di bar
+                                                color_discrete_sequence=['#2196F3'])
+                        
+                        fig_top3_hours.update_layout(
+                            yaxis={'categoryorder':'total ascending'},
+                            xaxis_title="Total Jam Kerja"
+                        )
+                        st.plotly_chart(fig_top3_hours, use_container_width=True)
+                    else:
+                        st.write("-")
 
             st.markdown("---")
             with st.expander("📂 Detail Data Karyawan", expanded=False):
