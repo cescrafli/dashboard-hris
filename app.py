@@ -122,12 +122,28 @@ def make_synced_input(label, key_prefix, default_val=80):
 
 # --- 4. SIDEBAR CONTROLS ---
 st.sidebar.header("1. Data Source")
-uploaded_file = st.sidebar.file_uploader("Upload Report (Excel/CSV)", type=["xlsx", "csv"])
+# UPDATE: Tambahkan accept_multiple_files=True
+uploaded_files = st.sidebar.file_uploader("Upload Report (Bisa Pilih Banyak File)", type=["xlsx", "csv"], accept_multiple_files=True)
 
-if uploaded_file:
-    # A. LOAD & MAPPING
-    try:
-        df_raw = load_data_smart(uploaded_file)
+if uploaded_files:
+    # A. LOAD & MAPPING (MULTI-FILE LOGIC)
+    all_dfs = []
+    
+    # Loop setiap file yang diupload
+    for file in uploaded_files:
+        try:
+            df_temp = load_data_smart(file)
+            # Opsional: Bersihkan nama kolom agar konsisten saat digabung
+            df_temp.columns = [str(c).strip() for c in df_temp.columns]
+            all_dfs.append(df_temp)
+        except Exception as e:
+            st.sidebar.error(f"Gagal load file: {file.name}. Error: {e}")
+
+    if all_dfs:
+        # Gabungkan semua file menjadi satu DataFrame besar
+        df_raw = pd.concat(all_dfs, ignore_index=True)
+        
+        # --- PROSES SEPERTI BIASA SETELAH DIGABUNG ---
         df_raw.columns = [str(c).strip() for c in df_raw.columns]
         cols = df_raw.columns.tolist()
 
@@ -137,6 +153,7 @@ if uploaded_file:
                 if any(x in c.upper() for x in k): return i
             return 0
 
+        # Selectbox mengambil kolom dari data gabungan
         c_nama = st.sidebar.selectbox("Nama", cols, index=find(['NAMA','NAME']))
         c_masuk = st.sidebar.selectbox("Absen Masuk", cols, index=find(['MASUK','IN']))
         c_keluar = st.sidebar.selectbox("Absen Keluar", cols, index=find(['KELUAR','OUT']))
@@ -151,7 +168,7 @@ if uploaded_file:
             st.session_state['processed'] = True 
             
             # --- 5. DATA PROCESSING ---
-            with st.spinner("Mengkalkulasi Data, Cross Join & Slicer..."):
+            with st.spinner("Menggabungkan Data & Kalkulasi..."):
                 
                 # 1. Cleaning Basic
                 df_act = df_raw[[c_nama, c_masuk, c_keluar, c_lokasi, c_catatan]].copy()
@@ -162,7 +179,7 @@ if uploaded_file:
                 df_act = df_act.dropna(subset=['Masuk_Obj']) 
                 
                 if df_act.empty:
-                    st.error("Format Tanggal/Waktu tidak terdeteksi. Pastikan kolom Absen Masuk berisi format tanggal waktu yang benar.")
+                    st.error("Format Tanggal/Waktu tidak terdeteksi. Pastikan format Excel seragam.")
                     st.stop()
 
                 df_act['Tanggal'] = df_act['Masuk_Obj'].dt.date
@@ -172,6 +189,7 @@ if uploaded_file:
                 df_act['Catatan'] = df_act['Catatan'].fillna("").astype(str).str.upper()
 
                 # 3. Cross Join (Master Data)
+                # Mencari range tanggal min/max dari KESELURUHAN file
                 unique_names = df_act['Nama'].unique()
                 min_date = df_act['Tanggal'].min()
                 max_date = df_act['Tanggal'].max()
@@ -179,6 +197,10 @@ if uploaded_file:
                 
                 grid = list(itertools.product(unique_names, all_dates.date))
                 df_master = pd.DataFrame(grid, columns=['Nama', 'Tanggal'])
+                
+                # Hapus duplikat jika ada file yang overlapping (tanggal sama diupload 2x)
+                df_act = df_act.drop_duplicates(subset=['Nama', 'Tanggal'], keep='last')
+                
                 df_final = pd.merge(df_master, df_act, on=['Nama', 'Tanggal'], how='left')
 
                 # --- 4. LOGIKA STATUS ---
@@ -236,11 +258,10 @@ if uploaded_file:
                 df_final['Minggu_Ke'] = df_final['Tanggal_DT'].dt.isocalendar().week
 
                 st.session_state['df_full'] = df_final
-                st.success("Data Berhasil di Proses!")
+                st.success(f"Berhasil menggabungkan {len(uploaded_files)} file!")
 
-    except Exception as e:
-        st.error(f"Terjadi Kesalahan saat memproses data: {e}")
-        st.write("Tips: Pastikan file Excel tidak dikunci password dan memiliki header kolom.")
+    else:
+        st.sidebar.warning("File kosong atau format tidak didukung.")
 
 # --- 6. VISUALISASI & SLICER ---
 if 'df_full' in st.session_state:
