@@ -8,11 +8,10 @@ import io
 from datetime import date, datetime, time, timedelta
 import calendar
 
-# --- 1. CONFIG & STYLE (ULTIMATE ENTERPRISE THEME) ---
+# --- 1. CONFIG & STYLE---
 warnings.filterwarnings('ignore')
 st.set_page_config(page_title="HRIS Enterprise Command Center", layout="wide", page_icon="🏢")
 
-# Custom CSS for Modern SaaS Look
 st.markdown("""
 <style>
     /* Font Import */
@@ -89,7 +88,7 @@ with c2:
 
 st.markdown("---")
 
-# --- 2. CONFIG DATA (2025) ---
+# --- 2. CONFIG DATA---
 libur_nasional = {
     date(2025, 1, 1): "Tahun Baru Masehi", date(2025, 1, 27): "Isra Mikraj",
     date(2025, 1, 28): "Cuti Imlek", date(2025, 1, 29): "Imlek",
@@ -420,7 +419,7 @@ if 'df_full' in st.session_state:
                 else:
                     st.success("✅ Excellent! No late arrivals detected.")
 
-            # --- ROW 3: TOP 3 RANKINGS (REQUESTED) ---
+            # --- ROW 3: TOP Ranking---
             st.markdown("### 🏆 Top 3 Leaderboards")
             r1, r2, r3 = st.columns(3)
             
@@ -451,7 +450,7 @@ if 'df_full' in st.session_state:
                 fig_r3.update_layout(yaxis={'categoryorder':'total ascending'}, margin=dict(t=0, b=0, l=0, r=0), height=200)
                 st.plotly_chart(fig_r3, use_container_width=True)
 
-            # --- DATA TABLE WITH TOTAL ---
+            # --- DATA TABLE---
             with st.expander("📄 Detailed Data Employee", expanded=False):
                 # 1. Prepare Data
                 df_display = df_f.copy()
@@ -484,7 +483,7 @@ if 'df_full' in st.session_state:
                     use_container_width=True
                 )
 
-    # === TAB 2: PERFORMANCE REVIEW (UPDATED LOGIC) ===
+    # === TAB 2: PERFORMANCE REVIEW===
     with tab2:
         st.write("")
         col_sel, col_dummy = st.columns([1, 2])
@@ -495,7 +494,7 @@ if 'df_full' in st.session_state:
             df_emp = df_f[df_f['Nama'] == target_emp].copy()
             
             if not df_emp.empty:
-                # --- CALCULATION ENGINE (UPDATED LOGIC) ---
+                # --- CALCULATION ENGINE---
                 
                 # 1. KPI (Presence) (20%)
                 # Hitung kehadiran aktif
@@ -511,7 +510,7 @@ if 'df_full' in st.session_state:
                     status = row['Status']
                     is_holiday_weekend = any(x in status for x in ["Libur", "Akhir Pekan"])
                     
-                    # Jika Libur/Weekend DAN tidak ada jam kerja, skip (jangan hitung sebagai 0)
+                    
                     if is_holiday_weekend and durasi == 0:
                         continue 
                     
@@ -621,4 +620,5 @@ if 'df_full' in st.session_state:
                     st.download_button("💾 Download Report (TXT)", report_text, f"Appraisal_{target_emp}.txt", use_container_width=True)
 
 else:
+
     st.info("👋 Please upload your attendance file in the sidebar to start.")
