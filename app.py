@@ -457,7 +457,7 @@ if 'df_full' in st.session_state:
                 except:
                     st.dataframe(df_final_view)
 
-    # === TAB 2: UPDATE APPRAISAL CALCULATOR (LOGIC PERBAIKAN DI SINI) ===
+    # === TAB 2: UPDATE APPRAISAL CALCULATOR===
     with tab2:
         st.header("🧮 Penilaian Kinerja Appraisal")
         st.info("Pilih karyawan untuk menghitung skor appraisal secara otomatis dan manual.")
@@ -597,4 +597,5 @@ if 'df_full' in st.session_state:
                 st.plotly_chart(fig_radar, use_container_width=True)
 
 else:
+
     st.info("👈 Silakan upload file Excel absensi Anda.")
